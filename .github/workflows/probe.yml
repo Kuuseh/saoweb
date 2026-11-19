@@ -1,0 +1,27 @@
+name: probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok-ubuntu
+
+  mac15:
+    runs-on: macos-15
+    steps:
+      - run: echo ok-mac15
+
+  mac13:
+    runs-on: macos-13
+    steps:
+      - run: echo ok-mac13
+
+  maclatest:
+    runs-on: macos-latest
+    steps:
+      - run: echo ok-maclatest
