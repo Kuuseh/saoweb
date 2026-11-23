@@ -7,7 +7,6 @@ final class LocalServer {
 
     private let root: URL
     private let queue = DispatchQueue(label: "saoweb.http", qos: .userInitiated, attributes: .concurrent)
-    private let startSem = DispatchSemaphore(value: 0)
     private var listener: NWListener?
     private(set) var port: UInt16 = 0
 
@@ -33,22 +32,42 @@ final class LocalServer {
         self.root = root.standardizedFileURL
     }
 
-    /// 返回实际端口，失败返回 nil
-    func start() -> UInt16? {
+    /// 优先监听固定端口 —— 端口是 localStorage 源的一部分，
+    /// 端口每次都变的话存档会跟着“消失”。
+    func start(preferred: UInt16 = 8123) -> UInt16? {
+        var candidates: [NWEndpoint.Port] = []
+        for i in 0..<12 {
+            if let p = NWEndpoint.Port(rawValue: preferred &+ UInt16(i)) {
+                candidates.append(p)
+            }
+        }
+        candidates.append(.any)
+
+        for cand in candidates {
+            if let p = attempt(cand) {
+                port = p
+                return p
+            }
+        }
+        return nil
+    }
+
+    private func attempt(_ candidate: NWEndpoint.Port) -> UInt16? {
+        let sem = DispatchSemaphore(value: 0)
+        var bound: UInt16 = 0
+
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
-            let l = try NWListener(using: params, on: .any)
-            self.listener = l
+            let l = try NWListener(using: params, on: candidate)
 
-            l.stateUpdateHandler = { [weak self] state in
-                guard let self = self else { return }
+            l.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    if let p = l.port { self.port = p.rawValue }
-                    self.startSem.signal()
+                    if let p = l.port { bound = p.rawValue }
+                    sem.signal()
                 case .failed, .cancelled:
-                    self.startSem.signal()
+                    sem.signal()
                 default:
                     break
                 }
@@ -57,10 +76,16 @@ final class LocalServer {
                 self?.accept(conn)
             }
             l.start(queue: queue)
-            _ = startSem.wait(timeout: .now() + 5)
-            return port == 0 ? nil : port
+            _ = sem.wait(timeout: .now() + 3)
+
+            if bound != 0 {
+                self.listener = l
+                return bound
+            }
+            l.cancel()
+            return nil
         } catch {
-            NSLog("LocalServer start failed: \(error)")
+            NSLog("LocalServer attempt \(candidate) failed: \(error)")
             return nil
         }
     }

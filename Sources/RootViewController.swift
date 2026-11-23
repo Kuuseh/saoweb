@@ -181,7 +181,7 @@ final class RootViewController: UIViewController {
         for sub in view.subviews { sub.removeFromSuperview() }
 
         let srv = LocalServer(root: gameRoot)
-        guard let port = srv.start() else {
+        guard let port = srv.start(preferred: 8123) else {
             let label = UILabel()
             label.text = "本地服务启动失败"
             label.textColor = .white
@@ -232,6 +232,9 @@ final class RootViewController: UIViewController {
         btn.frame = CGRect(x: view.bounds.width - 60, y: 12, width: 44, height: 44)
         btn.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
         btn.addTarget(self, action: #selector(sendEscape), for: .touchUpInside)
+        let lp = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        lp.minimumPressDuration = 0.8
+        btn.addGestureRecognizer(lp)
         view.addSubview(btn)
 
         let dbg = UIButton(type: .system)
@@ -243,6 +246,47 @@ final class RootViewController: UIViewController {
         dbg.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
         dbg.addTarget(self, action: #selector(showDebugLog), for: .touchUpInside)
         view.addSubview(dbg)
+    }
+
+    /// 长按 ☰ = 维护菜单（校验修复 / 全部重下）
+    @objc private func handleLongPress(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began else { return }
+        let sheet = UIAlertController(title: "维护",
+                                      message: "校验并修复：只补下缺失或大小不对的文件。\n全部重下：删掉现有数据重新拉 9 GB。",
+                                      preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(title: "校验并修复", style: .default) { [weak self] _ in
+            self?.enterRepair(deleteAll: false)
+        })
+        sheet.addAction(UIAlertAction(title: "全部重下", style: .destructive) { [weak self] _ in
+            self?.enterRepair(deleteAll: true)
+        })
+        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = CGRect(x: view.bounds.width - 60, y: 12, width: 44, height: 44)
+        }
+        present(sheet, animated: true)
+    }
+
+    private func enterRepair(deleteAll: Bool) {
+        server?.stop()
+        server = nil
+        webView?.removeFromSuperview()
+        webView = nil
+        didStartGame = false
+
+        if deleteAll {
+            try? FileManager.default.removeItem(at: gameRoot)
+        }
+
+        for sub in view.subviews { sub.removeFromSuperview() }
+        buildSetupUI()
+        if deleteAll {
+            statusLabel.text = "已清空，点下方按钮重新下载"
+        } else {
+            statusLabel.text = "点下方按钮开始校验，只补缺失的文件"
+        }
+        actionButton.isEnabled = true
     }
 
     @objc private func sendEscape() {
