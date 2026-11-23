@@ -11,6 +11,24 @@ final class LocalServer {
     private var listener: NWListener?
     private(set) var port: UInt16 = 0
 
+    private var notFoundLog: [String] = []
+    private let nfLock = NSLock()
+
+    func recentNotFound() -> [String] {
+        nfLock.lock()
+        defer { nfLock.unlock() }
+        return Array(notFoundLog.suffix(20))
+    }
+
+    private func recordNotFound(_ p: String) {
+        nfLock.lock()
+        notFoundLog.append(p)
+        if notFoundLog.count > 300 {
+            notFoundLog.removeFirst(150)
+        }
+        nfLock.unlock()
+    }
+
     init(root: URL) {
         self.root = root.standardizedFileURL
     }
@@ -104,6 +122,7 @@ final class LocalServer {
         }
 
         guard let file = resolve(target) else {
+            recordNotFound(target)
             sendText(conn, status: "404 Not Found", body: "Not Found: \(target)")
             return
         }

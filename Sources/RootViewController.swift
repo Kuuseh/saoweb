@@ -150,16 +150,17 @@ final class RootViewController: UIViewController {
             self.statusLabel.text = String(format: "%.2f / %.2f GB   %@",
                                            Double(done) / gb, Double(total) / gb,
                                            String(current.suffix(40)))
-        }, completion: { [weak self] failed, _ in
+        }, completion: { [weak self] failed, samples in
             guard let self = self else { return }
             if failed == 0 {
                 self.statusLabel.text = "下载完成，正在启动…"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.startGame() }
             } else if failed < 0 {
-                self.statusLabel.text = "连不上电脑。检查：同一 Wi-Fi？地址对不对？电脑防火墙放行了没？"
+                self.statusLabel.text = "连不上电脑。错误码 \(samples.first ?? "?")。检查：同一 Wi-Fi？地址对不对？"
                 self.actionButton.isEnabled = true
             } else {
-                self.statusLabel.text = "有 \(failed) 个文件没下下来，再点一次会只补缺失的文件"
+                self.statusLabel.numberOfLines = 8
+                self.statusLabel.text = "有 \(failed) 个文件失败：\n" + samples.joined(separator: "\n")
                 self.actionButton.isEnabled = true
             }
         })
@@ -211,6 +212,16 @@ final class RootViewController: UIViewController {
         web.load(URLRequest(url: url))
     }
 
+    /// 调试：显示本地服务器最近的 404 请求
+    @objc private func showDebugLog() {
+        guard let srv = server else { return }
+        let list = srv.recentNotFound()
+        let text = list.isEmpty ? "没有 404 记录" : list.joined(separator: "\n")
+        let alert = UIAlertController(title: "最近的 404", message: text, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
+    }
+
     /// iOS 没有返回键，给个浮动按钮发 ESC（MV 的菜单键）
     private func addEscapeButton() {
         let btn = UIButton(type: .system)
@@ -222,6 +233,16 @@ final class RootViewController: UIViewController {
         btn.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
         btn.addTarget(self, action: #selector(sendEscape), for: .touchUpInside)
         view.addSubview(btn)
+
+        let dbg = UIButton(type: .system)
+        dbg.setTitle("!", for: .normal)
+        dbg.setTitleColor(.white, for: .normal)
+        dbg.backgroundColor = UIColor(white: 0, alpha: 0.35)
+        dbg.layer.cornerRadius = 20
+        dbg.frame = CGRect(x: view.bounds.width - 112, y: 12, width: 44, height: 44)
+        dbg.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
+        dbg.addTarget(self, action: #selector(showDebugLog), for: .touchUpInside)
+        view.addSubview(dbg)
     }
 
     @objc private func sendEscape() {

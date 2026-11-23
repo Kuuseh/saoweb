@@ -23,7 +23,7 @@ final class Mirror {
     private var finished = false
 
     private var progressHandler: ((Int64, Int64, String) -> Void)?
-    private var completionHandler: ((Int) -> Void)?
+    private var completionHandler: ((Int, [String]) -> Void)?
 
     private let maxConcurrent = 4
 
@@ -40,11 +40,9 @@ final class Mirror {
     // MARK: - 入口
 
     func start(progress: @escaping (Int64, Int64, String) -> Void,
-               completion: @escaping (Int, Int) -> Void) {
+               completion: @escaping (Int, [String]) -> Void) {
         self.progressHandler = progress
-        self.completionHandler = { failedCount in
-            completion(failedCount, 0)
-        }
+        self.completionHandler = completion
         fetchList { [weak self] result in
             guard let self = self else { return }
             switch result {
@@ -52,7 +50,7 @@ final class Mirror {
                 self.prepare(list)
             case .failure(let err):
                 NSLog("filelist failed: \(err)")
-                DispatchQueue.main.async { completion(-1, 0) }
+                DispatchQueue.main.async { completion(-1, [(err as NSError).code.description]) }
             }
         }
     }
@@ -145,10 +143,15 @@ final class Mirror {
             return
         }
 
-        let task = session.downloadTask(with: url) { [weak self] tmp, _, error in
+        let task = session.downloadTask(with: url) { [weak self] tmp, response, error in
             guard let self = self else { return }
             var ok = false
-            if error == nil, let tmp = tmp {
+            var reason = ""
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                reason = "HTTP \(http.statusCode)"
+            } else if let error = error {
+                reason = (error as NSError).code.description
+            } else if let tmp = tmp {
                 let target = self.dest.appendingPathComponent(entry.path)
                 do {
                     try FileManager.default.createDirectory(
@@ -158,17 +161,26 @@ final class Mirror {
                         try FileManager.default.removeItem(at: target)
                     }
                     try FileManager.default.moveItem(at: tmp, to: target)
-                    ok = true
+                    let attrs = try FileManager.default.attributesOfItem(atPath: target.path)
+                    let size = (attrs[.size] as? NSNumber)?.int64Value ?? -1
+                    if size == entry.size {
+                        ok = true
+                    } else {
+                        reason = "size \(size)≠\(entry.size)"
+                    }
                 } catch {
+                    reason = "write"
                     NSLog("move failed \(entry.path): \(error)")
                 }
+            } else {
+                reason = "empty"
             }
             self.stateQueue.async {
                 self.active -= 1
                 if ok {
                     self.doneBytes += entry.size
                 } else {
-                    self.failed.append(entry.path)
+                    self.failed.append(entry.path + "  [" + reason + "]")
                 }
                 let done = self.doneBytes
                 let total = self.totalBytes
@@ -186,10 +198,10 @@ final class Mirror {
         guard !finished, nextIndex >= entries.count, active == 0 else { return }
         finished = true
         let failCount = failed.count
-        let sample = failed.prefix(5).joined(separator: ", ")
-        NSLog("mirror done, failed=\(failCount) \(sample)")
+        let sample = Array(failed.prefix(5))
+        NSLog("mirror done, failed=\(failCount) \(sample.joined(separator: " | "))")
         DispatchQueue.main.async {
-            self.completionHandler?(failCount)
+            self.completionHandler?(failCount, sample)
         }
     }
 
