@@ -10,7 +10,7 @@ workflows:
     scripts:
       - name: Verify local HTTP server logic
         script: |
-          xcrun swiftc -O Sources/LocalServer.swift Tests/main.swift -o /tmp/srvcheck
+          xcrun swiftc -O Sources/LocalServer.swift Sources/Mirror.swift Tests/main.swift -o /tmp/srvcheck
           /tmp/srvcheck
       - name: Install XcodeGen
         script: |

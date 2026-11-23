@@ -133,7 +133,7 @@ final class Mirror {
     }
 
     private func downloadOne(_ entry: Entry) {
-        guard let url = buildURL(for: entry.path) else {
+        guard let url = Mirror.makeURL(base: base, path: entry.path) else {
             stateQueue.async {
                 self.failed.append(entry.path)
                 self.active -= 1
@@ -205,15 +205,16 @@ final class Mirror {
         }
     }
 
-    private func buildURL(for path: String) -> URL? {
+    /// 拼接下载地址。
+    /// 注意：URLComponents.path 的 setter 自己会做百分号编码，
+    /// 这里绝对不能再手动 encode 一遍，否则会变成 %2520 → 服务器 404。
+    static func makeURL(base: URL, path: String) -> URL? {
         guard var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             return nil
         }
-        let encoded = path.split(separator: "/").map { seg -> String in
-            String(seg).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String(seg)
-        }.joined(separator: "/")
-        let basePath = comps.path
-        comps.path = basePath + "/" + encoded
+        var prefix = comps.path
+        while prefix.hasSuffix("/") { prefix.removeLast() }
+        comps.path = prefix + "/" + path
         return comps.url
     }
 }

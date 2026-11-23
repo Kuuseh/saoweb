@@ -70,6 +70,26 @@ check("Range", ranged.0 == 206 && ranged.1.count == 4, "code=\(ranged.0) bytes=\
 let head = fetch("\(base)/index.html", method: "HEAD")
 check("HEAD", head.0 == 200)
 
+// 回归测试：URL 拼接不能双重编码（曾经把 %20 编成 %2520，导致 5.8 万个文件 404）
+if let baseURL = URL(string: base) {
+    let simple = Mirror.makeURL(base: baseURL, path: "audio/x.ogg")
+    check("URL 拼接(简单)", simple?.absoluteString == "\(base)/audio/x.ogg", simple?.absoluteString ?? "nil")
+
+    if let u = Mirror.makeURL(base: baseURL, path: "img/Special__actionSeq/爱丽丝催眠自慰 (01).png") {
+        let got = fetch(u.absoluteString)
+        check("URL 拼接(空格+中文) 实际下载", got.0 == 200 && got.1.count == 5000,
+              "code=\(got.0) bytes=\(got.1.count)")
+    } else {
+        check("URL 拼接(空格+中文)", false, "nil")
+    }
+
+    if let u2 = Mirror.makeURL(base: URL(string: "\(base)/")!, path: "js/rpg_core.js") {
+        check("URL 拼接(base 带斜杠)", u2.absoluteString == "\(base)/js/rpg_core.js", u2.absoluteString)
+    } else {
+        check("URL 拼接(base 带斜杠)", false, "nil")
+    }
+}
+
 server.stop()
 
 if failures > 0 {
