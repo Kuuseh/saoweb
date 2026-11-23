@@ -8,6 +8,10 @@ workflows:
       vars:
         SCHEME: SAOWeb
     scripts:
+      - name: Verify local HTTP server logic
+        script: |
+          swiftc -O Sources/LocalServer.swift Tests/LocalServerCheck.swift -o /tmp/srvcheck
+          /tmp/srvcheck
       - name: Install XcodeGen
         script: |
           brew install xcodegen
