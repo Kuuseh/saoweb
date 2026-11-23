@@ -1,0 +1,38 @@
+workflows:
+  ios-unsigned-ipa:
+    name: Build unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      vars:
+        SCHEME: SAOWeb
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+      - name: Generate Xcode project
+        script: |
+          xcodegen generate
+          ls -la
+      - name: Build unsigned app
+        script: |
+          xcodebuild \
+            -project SAOWeb.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Package unsigned IPA
+        script: |
+          mkdir -p out/Payload
+          cp -R build/Build/Products/Release-iphoneos/SAOWeb.app out/Payload/
+          cd out
+          zip -qry SAOWeb-unsigned.ipa Payload
+          ls -lh SAOWeb-unsigned.ipa
+    artifacts:
+      - out/SAOWeb-unsigned.ipa
