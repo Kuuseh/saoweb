@@ -194,11 +194,14 @@ final class Mirror {
     }
 
     private func buildURL(for path: String) -> URL? {
-        var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        guard var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
         let encoded = path.split(separator: "/").map { seg -> String in
             String(seg).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String(seg)
         }.joined(separator: "/")
-        comps?.path = (comps?.path ?? "") + "/" + encoded
-        return comps?.url
+        let basePath = comps.path
+        comps.path = basePath + "/" + encoded
+        return comps.url
     }
 }
