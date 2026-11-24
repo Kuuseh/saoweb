@@ -332,7 +332,7 @@ extension RootViewController: WKNavigationDelegate {
         guard !saveImportStarted else { return }
         saveImportStarted = true
 
-        let probe = "try { localStorage.getItem('sao_import_v2') ? 'skip' : 'go'; } catch (e) { 'nolocalstorage'; }"
+        let probe = "try { sessionStorage.getItem('sao_import_session') ? 'skip' : 'go'; } catch (e) { 'nols'; }"
         web.evaluateJavaScript(probe) { [weak self] result, _ in
             guard let res = result as? String, res == "go", let self = self else { return }
             self.performSaveImport(web)
@@ -357,7 +357,8 @@ extension RootViewController: WKNavigationDelegate {
               localStorage.setItem(key, await res.text());
               n++;
             }
-            localStorage.setItem('sao_import_v2', '1');
+            localStorage.setItem('sao_import_v3', '1');
+            try { sessionStorage.setItem('sao_import_session', '1'); } catch (e) {}
             if (n > 0) { location.reload(); }
             return 'imported ' + n;
           } catch (e) { return 'err ' + e.message; }
