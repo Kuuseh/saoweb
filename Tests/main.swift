@@ -16,6 +16,8 @@ write("index.html", "<html>mock</html>")
 write("js/rpg_core.js", "var RPG={};")
 write("img/Special__actionSeq/爱丽丝催眠自慰 (01).png", String(repeating: "x", count: 5000))
 write("audio/x.ogg", "OGGDATA")
+write("save/file1.rpgsave", "N4IgzgnmTESTSAVE")
+write("save_extra/file9.rpgsave", "N4IgzgnmEXTRA")
 
 var failures = 0
 func check(_ name: String, _ ok: Bool, _ detail: String = "") {
@@ -69,6 +71,16 @@ check("Range", ranged.0 == 206 && ranged.1.count == 4, "code=\(ranged.0) bytes=\
 
 let head = fetch("\(base)/index.html", method: "HEAD")
 check("HEAD", head.0 == 200)
+
+// 存档清单接口：App 靠它把 rpgsave 导入 localStorage
+let saveList = fetch("\(base)/__savelist")
+let saveListText = String(data: saveList.1, encoding: .utf8) ?? ""
+check("__savelist", saveList.0 == 200
+      && saveListText.contains("save|file1.rpgsave")
+      && saveListText.contains("save_extra|file9.rpgsave"),
+      saveListText)
+
+check("存档文件可下载", fetch("\(base)/save/file1.rpgsave").0 == 200)
 
 // 回归测试：URL 拼接不能双重编码（曾经把 %20 编成 %2520，导致 5.8 万个文件 404）
 if let baseURL = URL(string: base) {

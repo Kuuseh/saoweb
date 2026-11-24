@@ -14,6 +14,7 @@ final class RootViewController: UIViewController {
 
     private var mirror: Mirror?
     private var didStartGame = false
+    private var saveImportStarted = false
 
     // MARK: - 生命周期
 
@@ -203,6 +204,7 @@ final class RootViewController: UIViewController {
         web.isOpaque = true
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
+        web.navigationDelegate = self
         view.addSubview(web)
         self.webView = web
 
@@ -311,5 +313,58 @@ extension RootViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         startDownload()
         return true
+    }
+}
+
+// MARK: - 存档导入
+//
+// 游戏是 MV 的浏览器模式，存档存在 localStorage（键名 "RPG file1" 这种）。
+// 而 www/save/*.rpgsave 这套文件只在 PC 的 NW.js 模式下才被读取，
+// 所以在手机上 CONTINUE 列表是空的。这里在页面加载后把文件读进 localStorage。
+
+extension RootViewController: WKNavigationDelegate {
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        importSavesIfNeeded(webView)
+    }
+
+    private func importSavesIfNeeded(_ web: WKWebView) {
+        guard !saveImportStarted else { return }
+        saveImportStarted = true
+
+        let probe = "try { localStorage.getItem('sao_import_v2') ? 'skip' : 'go'; } catch (e) { 'nolocalstorage'; }"
+        web.evaluateJavaScript(probe) { [weak self] result, _ in
+            guard let res = result as? String, res == "go", let self = self else { return }
+            self.performSaveImport(web)
+        }
+    }
+
+    private func performSaveImport(_ web: WKWebView) {
+        let js = """
+        (async function(){
+          try {
+            const r = await fetch('/__savelist');
+            const list = await r.json();
+            let n = 0;
+            for (const item of list) {
+              const seg = item.split('|');
+              const dir = seg[0], name = seg[1];
+              const base = name.replace(/\\.rpgsave$/i, '');
+              const key = 'RPG ' + base;
+              if (localStorage.getItem(key) !== null) continue;
+              const res = await fetch('/' + dir + '/' + encodeURIComponent(name));
+              if (!res.ok) continue;
+              localStorage.setItem(key, await res.text());
+              n++;
+            }
+            localStorage.setItem('sao_import_v2', '1');
+            if (n > 0) { location.reload(); }
+            return 'imported ' + n;
+          } catch (e) { return 'err ' + e.message; }
+        })();
+        """
+        web.evaluateJavaScript(js) { result, error in
+            NSLog("save import -> \(String(describing: result)) \(String(describing: error))")
+        }
     }
 }

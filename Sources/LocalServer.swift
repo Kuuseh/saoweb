@@ -28,6 +28,20 @@ final class LocalServer {
         nfLock.unlock()
     }
 
+    /// 列出 save/ 和 save_extra/ 下的存档，格式 "目录|文件名"
+    private func saveFileList() -> [String] {
+        var out: [String] = []
+        let fm = FileManager.default
+        for dir in ["save", "save_extra"] {
+            let d = root.appendingPathComponent(dir)
+            guard let items = try? fm.contentsOfDirectory(atPath: d.path) else { continue }
+            for name in items.sorted() where name.hasSuffix(".rpgsave") {
+                out.append("\(dir)|\(name)")
+            }
+        }
+        return out
+    }
+
     init(root: URL) {
         self.root = root.standardizedFileURL
     }
@@ -144,6 +158,14 @@ final class LocalServer {
                     if let e = Int64(segs[1]) { rangeEnd = e }
                 }
             }
+        }
+
+        // 存档清单：给前端 JS 用，用于把 save/*.rpgsave 导入 localStorage
+        if target.hasPrefix("/__savelist") {
+            let items = saveFileList()
+            let json = "[" + items.map { "\"\($0)\"" }.joined(separator: ",") + "]"
+            sendText(conn, status: "200 OK", body: json)
+            return
         }
 
         guard let file = resolve(target) else {
