@@ -15,6 +15,7 @@ final class RootViewController: UIViewController {
     private var mirror: Mirror?
     private var didStartGame = false
     private var saveImportStarted = false
+    private var presentedDebug: UIViewController?
 
     // MARK: - 生命周期
 
@@ -214,14 +215,80 @@ final class RootViewController: UIViewController {
         web.load(URLRequest(url: url))
     }
 
-    /// 调试：显示本地服务器最近的 404 请求
+    /// 调试：404 记录 + localStorage 全部键（用来确认存档有没有写进去）
     @objc private func showDebugLog() {
         guard let srv = server else { return }
-        let list = srv.recentNotFound()
-        let text = list.isEmpty ? "没有 404 记录" : list.joined(separator: "\n")
-        let alert = UIAlertController(title: "最近的 404", message: text, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "好", style: .default))
-        present(alert, animated: true)
+        let notFound = srv.recentNotFound()
+
+        let js = """
+        (function(){
+          try {
+            var out = [];
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              var v = localStorage.getItem(k) || '';
+              out.push(k + '  (' + v.length + ')');
+            }
+            out.sort();
+            return '共 ' + out.length + ' 个键\\n' + out.join('\\n');
+          } catch (e) { return 'ls error: ' + e.message; }
+        })();
+        """
+
+        let show: (String) -> Void = { [weak self] lsText in
+            guard let self = self else { return }
+            var msg = "=== 404（最近 20 条）===\n"
+            msg += notFound.isEmpty ? "无\n" : notFound.joined(separator: "\n") + "\n"
+            msg += "\n=== localStorage ===\n" + lsText
+            self.showText(title: "诊断", text: msg)
+        }
+
+        if let web = webView {
+            web.evaluateJavaScript(js) { result, _ in
+                show((result as? String) ?? "读取失败")
+            }
+        } else {
+            show("无 webview")
+        }
+    }
+
+    private func showText(title: String, text: String) {
+        let vc = UIViewController()
+        vc.view.backgroundColor = .black
+        let tv = UITextView(frame: .zero)
+        tv.translatesAutoresizingMaskIntoConstraints = false
+        tv.backgroundColor = .black
+        tv.textColor = .white
+        tv.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        tv.text = text
+        tv.isEditable = false
+        vc.view.addSubview(tv)
+
+        let close = UIButton(type: .system)
+        close.translatesAutoresizingMaskIntoConstraints = false
+        close.setTitle("关闭", for: .normal)
+        close.titleLabel?.font = .boldSystemFont(ofSize: 17)
+        close.addTarget(self, action: #selector(closeDebug), for: .touchUpInside)
+        vc.view.addSubview(close)
+
+        NSLayoutConstraint.activate([
+            tv.topAnchor.constraint(equalTo: vc.view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            tv.leadingAnchor.constraint(equalTo: vc.view.leadingAnchor, constant: 12),
+            tv.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor, constant: -12),
+            tv.bottomAnchor.constraint(equalTo: close.topAnchor, constant: -8),
+            close.centerXAnchor.constraint(equalTo: vc.view.centerXAnchor),
+            close.bottomAnchor.constraint(equalTo: vc.view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            close.widthAnchor.constraint(equalToConstant: 120),
+            close.heightAnchor.constraint(equalToConstant: 40),
+        ])
+        vc.modalPresentationStyle = .fullScreen
+        presentedDebug = vc
+        present(vc, animated: true)
+    }
+
+    @objc private func closeDebug() {
+        presentedDebug?.dismiss(animated: true)
+        presentedDebug = nil
     }
 
     /// iOS 没有返回键，给个浮动按钮发 ESC（MV 的菜单键）
