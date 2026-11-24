@@ -413,18 +413,26 @@ extension RootViewController: WKNavigationDelegate {
             const r = await fetch('/__savelist');
             const list = await r.json();
             let n = 0;
+            const keyFor = function(base){
+              const m = base.match(/^file(\\d+)$/i);
+              if (m) return 'RPG File' + m[1];
+              if (/^global$/i.test(base)) return 'RPG Global';
+              if (/^config$/i.test(base)) return 'RPG Config';
+              return 'RPG ' + base;
+            };
             for (const item of list) {
               const seg = item.split('|');
               const dir = seg[0], name = seg[1];
               const base = name.replace(/\\.rpgsave$/i, '');
-              const key = 'RPG ' + base;
+              const key = keyFor(base);
               if (localStorage.getItem(key) !== null) continue;
               const res = await fetch('/' + dir + '/' + encodeURIComponent(name));
               if (!res.ok) continue;
-              localStorage.setItem(key, await res.text());
+              const txt = await res.text();
+              localStorage.setItem(key, txt);
+              localStorage.setItem('RPG ' + base, txt);
               n++;
             }
-            localStorage.setItem('sao_import_v3', '1');
             try { sessionStorage.setItem('sao_import_session', '1'); } catch (e) {}
             if (n > 0) { location.reload(); }
             return 'imported ' + n;
