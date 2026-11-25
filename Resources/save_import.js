@@ -45,7 +45,14 @@
       report.errors.push('__global.txt: ' + e.message);
     }
 
-    /* 2. 存档文件本体 */
+    /* 2. 存档文件本体（同一会话内只做一次，避免每次启动都扫一遍） */
+    var alreadyImported = false;
+    try { alreadyImported = sessionStorage.getItem('sao_import_session') === '1'; } catch (e) {}
+    if (alreadyImported) {
+      report.skipped = -1;
+      return JSON.stringify(report);
+    }
+
     var list = [];
     try {
       var res = await fetch('/__savelist');

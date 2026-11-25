@@ -401,14 +401,11 @@ extension RootViewController: WKNavigationDelegate {
     }
 
     private func importSavesIfNeeded(_ web: WKWebView) {
+        // 索引每次启动都要写一次：游戏 boot 时可能把 RPG Global 覆盖成空数组，
+        // 只做首次导入会在页面重载后被跳过，导致索引丢失。
         guard !saveImportStarted else { return }
         saveImportStarted = true
-
-        let probe = "try { sessionStorage.getItem('sao_import_session') ? 'skip' : 'go'; } catch (e) { 'nols'; }"
-        web.evaluateJavaScript(probe) { [weak self] result, _ in
-            guard let res = result as? String, res == "go", let self = self else { return }
-            self.performSaveImport(web)
-        }
+        performSaveImport(web)
     }
 
     private func performSaveImport(_ web: WKWebView) {
@@ -482,11 +479,25 @@ extension RootViewController: WKNavigationDelegate {
           var out = {};
           try { out.globalLen = (localStorage.getItem('RPG Global') || '').length; } catch (e) { out.globalLen = -1; }
           try { out.file1Len = (localStorage.getItem('RPG File1') || '').length; } catch (e) { out.file1Len = -1; }
+          try { out.head = (localStorage.getItem('RPG Global') || '').slice(0, 24); } catch (e) { out.head = 'err'; }
           try {
             if (typeof StorageManager !== 'undefined' && StorageManager.webStorageKey) {
-              out.key = String(StorageManager.webStorageKey(-1));
+              out.key0 = String(StorageManager.webStorageKey(0));
+              out.keyM1 = String(StorageManager.webStorageKey(-1));
             }
-          } catch (e) { out.key = 'err'; }
+          } catch (e) { out.key0 = 'err'; }
+          try {
+            if (typeof StorageManager !== 'undefined' && StorageManager.load) {
+              var raw = StorageManager.load(0);
+              out.rawType = (raw === null ? 'null' : typeof raw);
+              if (typeof raw === 'string') {
+                out.rawLen = raw.length;
+                var parsed = JSON.parse(raw);
+                out.parsedLen = parsed ? parsed.length : -1;
+                out.parsedFilled = parsed ? parsed.filter(function(x){return !!x;}).length : -1;
+              }
+            }
+          } catch (e) { out.loadErr = e.message; }
           try {
             if (typeof DataManager !== 'undefined') {
               DataManager.loadGlobalInfo();
@@ -494,6 +505,7 @@ extension RootViewController: WKNavigationDelegate {
               out.giLen = gi.length;
               out.giFilled = gi.filter(function(x){ return !!x; }).length;
               out.anySave = String(DataManager.isAnySavefileExists());
+              out.maxFiles = String(DataManager.maxSavefiles());
             }
           } catch (e) { out.dmErr = e.message; }
           return JSON.stringify(out);
