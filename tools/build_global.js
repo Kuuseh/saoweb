@@ -44,13 +44,15 @@ function buildEntry(index, contents) {
   const party = (contents && contents.party) || {};
   const system = (contents && contents.system) || {};
   const ids = jsonExArray(party._actors);
+  // 注意：本作 charactersFacesForSavefile 返回的是数组 [名字, 索引]，
+  // 绘制端用 data[0] / data[1]，写成对象会取到 undefined 并崩在 isBigCharacter。
   const characters = ids.map(id => {
     const a = actorsData[id] || {};
-    return { name: a.characterName || '', index: a.characterIndex || 0 };
+    return [a.characterName || '', a.characterIndex || 0];
   });
   const faces = ids.map(id => {
     const a = actorsData[id] || {};
-    return { name: a.faceName || '', index: a.faceIndex || 0 };
+    return [a.faceName || '', a.faceIndex || 0];
   });
   const seconds = Number(system._playtime) || (Number(system._framesOnSave) || 0) / 60;
   return {

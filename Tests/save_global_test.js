@@ -74,6 +74,22 @@ check('索引字段完整', () => {
   }
 });
 
+check('characters/faces 必须是 [名字, 索引] 数组（绘制端用 data[0]/data[1]）', () => {
+  const filled = decoded.filter(Boolean);
+  for (const e of filled) {
+    for (const c of e.characters) {
+      assert.ok(Array.isArray(c), 'characters 元素不是数组: ' + JSON.stringify(c));
+      assert.strictEqual(typeof c[0], 'string');
+      assert.strictEqual(typeof c[1], 'number');
+    }
+    for (const f of e.faces) {
+      assert.ok(Array.isArray(f), 'faces 元素不是数组: ' + JSON.stringify(f));
+      assert.strictEqual(typeof f[0], 'string');
+      assert.strictEqual(typeof f[1], 'number');
+    }
+  }
+});
+
 check('至少有一个存档带角色立绘信息', () => {
   const withChars = decoded.filter(e => e && e.characters && e.characters.length > 0);
   assert.ok(withChars.length >= 1, '所有槽位的角色信息都是空的');
