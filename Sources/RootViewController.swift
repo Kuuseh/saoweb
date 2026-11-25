@@ -231,7 +231,8 @@ final class RootViewController: UIViewController {
               out.push(k + '  (' + v.length + ')');
             }
             out.sort();
-            return '共 ' + out.length + ' 个键\\n' + out.join('\\n');
+            var rep = localStorage.getItem('__sao_import_report') || '（没有导入报告）';
+            return rep + '\\n共 ' + out.length + ' 个键\\n' + out.join('\\n');
           } catch (e) { return 'ls error: ' + e.message; }
         })();
         """
@@ -410,11 +411,88 @@ extension RootViewController: WKNavigationDelegate {
     }
 
     private func performSaveImport(_ web: WKWebView) {
+        // 索引随包携带：不依赖 App 是否下载过 /save/__global.txt，也不依赖页面的 LZString。
+        var bundledIndex = "'no-bundled-index'"
+        if let url = Bundle.main.url(forResource: "save_global", withExtension: "txt"),
+           let text = try? String(contentsOf: url, encoding: .utf8) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                bundledIndex = jsStringLiteral(trimmed)
+            }
+        }
+
         guard let url = Bundle.main.url(forResource: "save_import", withExtension: "js"),
               let script = try? String(contentsOf: url, encoding: .utf8) else {
             NSLog("save import: Resources/save_import.js missing in bundle")
+            lastImportReport = "save_import.js 未打进包"
             return
         }
+
+        web.evaluateJavaScript(script) { [weak self] _, injectError in
+            if let injectError = injectError {
+                NSLog("save import inject error: \(injectError)")
+                self?.lastImportReport = "注入失败: \(injectError.localizedDescription)"
+                return
+            }
+
+            let runner = """
+            (function(){
+              if (!window.__saoImportRun) return 'no-runner';
+              var done = function(report){
+                try { localStorage.setItem('__sao_import_report', report); } catch (e) {}
+                try { sessionStorage.setItem('sao_import_session','1'); } catch (e) {}
+                return report;
+              };
+              return window.__saoImportRun().then(function(r){
+                var o;
+                try { o = JSON.parse(r); } catch (e) { o = { errors: ['bad report'] }; }
+                var wrote = false;
+                try {
+                  if (localStorage.getItem('RPG Global') !== \(bundledIndex)) {
+                    localStorage.setItem('RPG Global', \(bundledIndex));
+                    wrote = true;
+                  }
+                } catch (e) {
+                  (o.errors = o.errors || []).push('index: ' + e.message);
+                }
+                o.bundledIndexWritten = wrote;
+                var report = JSON.stringify(o);
+                done(report);
+                if (wrote || o.imported > 0) { location.reload(); }
+                return report;
+              })['catch'](function(e){
+                return done(JSON.stringify({ errors: ['exception: ' + e.message] }));
+              });
+            })();
+            """
+            web.evaluateJavaScript(runner) { [weak self] result, error in
+                let text = (result as? String) ?? "（异步执行中，见面板）"
+                NSLog("save import -> \(text) \(String(describing: error))")
+                self?.lastImportReport = text
+            }
+        }
+    }
+
+    /// 把任意文本转成安全的 JS 字符串字面量
+    private func jsStringLiteral(_ s: String) -> String {
+        var out = "\""
+        for ch in s.unicodeScalars {
+            switch ch {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if ch.value < 0x20 || ch.value > 0x7E {
+                    out += String(format: "\\u%04x", ch.value)
+                } else {
+                    out.unicodeScalars.append(ch)
+                }
+            }
+        }
+        return out + "\""
+    }
 
         web.evaluateJavaScript(script) { _, injectError in
             if let injectError = injectError {

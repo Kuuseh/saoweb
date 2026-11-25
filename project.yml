@@ -16,6 +16,8 @@ targets:
           - "Info.plist"
       - path: Resources/save_import.js
         buildPhase: resources
+      - path: Resources/save_global.txt
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
