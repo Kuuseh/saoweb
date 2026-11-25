@@ -93,6 +93,15 @@ for (let slot = 1; slot <= 20; slot++) {
     report.push('slot ' + slot + ': JSON 解析失败 ' + e.message);
     continue;
   }
+
+  // 只收录本作版本的存档：跨版本存档缺字段，读档时插件会崩（实测 Olivia_HorrorEffects）
+  const saveVersion = contents.system && contents.system._versionId;
+  if (Number(saveVersion) !== Number(systemData.versionId)) {
+    report.push('slot ' + slot + ': 跳过（版本 ' + saveVersion + ' ≠ 游戏 ' + systemData.versionId + '）'
+      + ' 存档=' + path.basename(path.dirname(file)) + '/' + path.basename(file));
+    continue;
+  }
+
   globalInfo[slot] = buildEntry(slot, contents);
   report.push('slot ' + slot + ': OK  队伍=' + jsonExArray((contents.party || {})._actors).length
     + '  时长=' + globalInfo[slot].playtime
