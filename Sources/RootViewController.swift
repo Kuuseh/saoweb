@@ -493,30 +493,4 @@ extension RootViewController: WKNavigationDelegate {
         }
         return out + "\""
     }
-
-        web.evaluateJavaScript(script) { _, injectError in
-            if let injectError = injectError {
-                NSLog("save import inject error: \(injectError)")
-                return
-            }
-            let runner = """
-            (function(){
-              if (!window.__saoImportRun) return 'no-runner';
-              return window.__saoImportRun().then(function(r){
-                try { sessionStorage.setItem('sao_import_session','1'); } catch (e) {}
-                try {
-                  var o = JSON.parse(r);
-                  if (o.indexChanged || o.imported > 0) { location.reload(); }
-                } catch (e) {}
-                return r;
-              })['catch'](function(e){ return 'err ' + e.message; });
-            })();
-            """
-            web.evaluateJavaScript(runner) { [weak self] result, error in
-                let text = (result as? String) ?? "nil"
-                NSLog("save import -> \(text) \(String(describing: error))")
-                self?.lastImportReport = text
-            }
-        }
-    }
 }
