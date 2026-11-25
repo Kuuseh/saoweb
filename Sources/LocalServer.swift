@@ -265,7 +265,9 @@ final class LocalServer {
         })
     }
 
-    /// 把请求路径安全地映射到 root 下的文件
+    /// 把请求路径安全地映射到 root 下的文件。
+    /// 精确匹配失败时，按“大小写不敏感 + Unicode 等价”再找一次：
+    /// MV 插件的标签常写成 star，而文件是 Star.png，Windows 上能开、这里会 404。
     private func resolve(_ target: String) -> URL? {
         var path = target
         if let q = path.firstIndex(of: "?") { path = String(path[..<q]) }
@@ -276,6 +278,23 @@ final class LocalServer {
         if path.hasSuffix("/") { path += "index.html" }
         if path.contains("..") { return nil }
 
+        if let direct = fileURL(relative: path) {
+            return direct
+        }
+
+        if let cached = cachedCaseMatch(for: path), let url = fileURL(relative: cached) {
+            return url
+        }
+
+        guard let actual = LocalServer.caseInsensitiveRelativePath(root: root, relative: path) else {
+            return nil
+        }
+        rememberCaseMatch(requested: path, actual: actual)
+        return fileURL(relative: actual)
+    }
+
+    /// 相对路径 -> 真实文件 URL（目录会自动补 index.html）
+    private func fileURL(relative path: String) -> URL? {
         var url = root.appendingPathComponent(path)
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
@@ -285,6 +304,51 @@ final class LocalServer {
         guard std.path.hasPrefix(root.path) else { return nil }
         guard FileManager.default.fileExists(atPath: std.path) else { return nil }
         return std
+    }
+
+    // MARK: - 大小写不敏感匹配
+
+    private var caseCache: [String: String] = [:]
+    private let caseLock = NSLock()
+
+    private func cachedCaseMatch(for path: String) -> String? {
+        caseLock.lock()
+        defer { caseLock.unlock() }
+        return caseCache[path.lowercased()]
+    }
+
+    private func rememberCaseMatch(requested: String, actual: String) {
+        caseLock.lock()
+        if caseCache.count > 20000 { caseCache.removeAll(keepingCapacity: true) }
+        caseCache[requested.lowercased()] = actual
+        caseLock.unlock()
+    }
+
+    /// 逐段做大小写/Unicode 等价匹配，返回真实相对路径（找不到返回 nil）
+    static func caseInsensitiveRelativePath(root: URL, relative: String) -> String? {
+        let comps = relative.split(separator: "/").map(String.init)
+        guard !comps.isEmpty else { return nil }
+        var current = root
+        var out: [String] = []
+        for comp in comps {
+            let candidate = current.appendingPathComponent(comp)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDir) {
+                out.append(comp)
+                current = candidate
+                continue
+            }
+            guard let items = try? FileManager.default.contentsOfDirectory(atPath: current.path) else {
+                return nil
+            }
+            let hit = items.first {
+                $0.compare(comp, options: [.caseInsensitive, .widthInsensitive]) == .orderedSame
+            }
+            guard let match = hit else { return nil }
+            out.append(match)
+            current = current.appendingPathComponent(match)
+        }
+        return out.joined(separator: "/")
     }
 
     static func mimeType(for name: String) -> String {

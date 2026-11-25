@@ -66,6 +66,16 @@ check("中文路径", chinese.0 == 200 && chinese.1.count == 5000, "code=\(chine
 let missing = fetch("\(base)/missing.js")
 check("404", missing.0 == 404)
 
+// 回归测试：文件名大小写不一致（游戏里请求 star.png，磁盘上是 Star.png）
+write("img/eventindicators/Star.png", "STARPNG")
+let lower = fetch("\(base)/img/eventindicators/star.png")
+check("大小写回退(文件名)", lower.0 == 200 && lower.1.count == 7, "code=\(lower.0)")
+let upper = fetch("\(base)/IMG/EVENTINDICATORS/STAR.PNG")
+check("大小写回退(目录+扩展名)", upper.0 == 200 && upper.1.count == 7, "code=\(upper.0)")
+let exactCase = fetch("\(base)/img/eventindicators/Star.png")
+check("精确匹配仍然可用", exactCase.0 == 200 && exactCase.1.count == 7, "code=\(exactCase.0)")
+
+
 let ranged = fetch("\(base)/js/rpg_core.js", range: "bytes=0-3")
 check("Range", ranged.0 == 206 && ranged.1.count == 4, "code=\(ranged.0) bytes=\(ranged.1.count)")
 
