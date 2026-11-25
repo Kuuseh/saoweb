@@ -15,6 +15,7 @@ final class RootViewController: UIViewController {
     private var mirror: Mirror?
     private var didStartGame = false
     private var saveImportStarted = false
+    private var lastImportReport = ""
     private var presentedDebug: UIViewController?
 
     // MARK: - 生命周期
@@ -237,7 +238,9 @@ final class RootViewController: UIViewController {
 
         let show: (String) -> Void = { [weak self] lsText in
             guard let self = self else { return }
-            var msg = "=== 404（最近 20 条）===\n"
+            var msg = "=== 存档导入 ===\n"
+            msg += self.lastImportReport.isEmpty ? "（尚未执行）\n" : self.lastImportReport + "\n"
+            msg += "\n=== 404（最近 20 条）===\n"
             msg += notFound.isEmpty ? "无\n" : notFound.joined(separator: "\n") + "\n"
             msg += "\n=== localStorage ===\n" + lsText
             self.showText(title: "诊断", text: msg)
@@ -425,14 +428,16 @@ extension RootViewController: WKNavigationDelegate {
                 try { sessionStorage.setItem('sao_import_session','1'); } catch (e) {}
                 try {
                   var o = JSON.parse(r);
-                  if (o.imported > 0 || o.repaired > 0 || o.globalChanged) { location.reload(); }
+                  if (o.indexChanged || o.imported > 0) { location.reload(); }
                 } catch (e) {}
                 return r;
               })['catch'](function(e){ return 'err ' + e.message; });
             })();
             """
-            web.evaluateJavaScript(runner) { result, error in
-                NSLog("save import -> \(String(describing: result)) \(String(describing: error))")
+            web.evaluateJavaScript(runner) { [weak self] result, error in
+                let text = (result as? String) ?? "nil"
+                NSLog("save import -> \(text) \(String(describing: error))")
+                self?.lastImportReport = text
             }
         }
     }
