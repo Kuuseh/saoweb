@@ -32,6 +32,14 @@ function jsonExArray(v) {
   return [];
 }
 
+/* MV 的存档索引约定（本项目 rpg_managers.js 实测）：
+ *   - globalInfo[0] 空置，存档 N 放在 globalInfo[N]（N = 1..maxSavefiles）
+ *   - isThisGameFile 校验 globalId === DataManager._globalId（本作为 'RPGMV'）
+ *                              且 title === $dataSystem.gameTitle
+ *   - isAnySavefileExists 从 i = 1 开始遍历
+ */
+const GLOBAL_ID = 'RPGMV';
+
 function buildEntry(index, contents) {
   const party = (contents && contents.party) || {};
   const system = (contents && contents.system) || {};
@@ -44,19 +52,19 @@ function buildEntry(index, contents) {
     const a = actorsData[id] || {};
     return { name: a.faceName || '', index: a.faceIndex || 0 };
   });
-  // MV 存的是帧数（_framesOnSave），读档时换算成秒
   const seconds = Number(system._playtime) || (Number(system._framesOnSave) || 0) / 60;
   return {
-    globalId: index,
+    globalId: GLOBAL_ID,
     title: gameTitle,
     characters: characters,
     faces: faces,
     playtime: playtimeText(seconds),
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    savefileId: index
   };
 }
 
-const globalInfo = [];
+const globalInfo = [null];   // 索引 0 空置，存档 1 落在索引 1
 const report = [];
 
 for (let slot = 1; slot <= 20; slot++) {
@@ -83,9 +91,9 @@ for (let slot = 1; slot <= 20; slot++) {
     report.push('slot ' + slot + ': JSON 解析失败 ' + e.message);
     continue;
   }
-  globalInfo[slot - 1] = buildEntry(slot, contents);
-  report.push('slot ' + slot + ': OK  队伍=' + ((contents.party && contents.party._actors) || []).length
-    + '  时长=' + globalInfo[slot - 1].playtime
+  globalInfo[slot] = buildEntry(slot, contents);
+  report.push('slot ' + slot + ': OK  队伍=' + jsonExArray((contents.party || {})._actors).length
+    + '  时长=' + globalInfo[slot].playtime
     + '  存档=' + path.basename(path.dirname(file)) + '/' + path.basename(file));
 }
 
