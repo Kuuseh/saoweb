@@ -17,6 +17,7 @@ final class RootViewController: UIViewController {
     private var saveImportStarted = false
     private var lastImportReport = ""
     private var diagnosticLabel: UILabel?
+    private var terminationCount = 0
     private var presentedDebug: UIViewController?
 
     // MARK: - 生命周期
@@ -400,6 +401,16 @@ extension RootViewController: WKNavigationDelegate {
         importSavesIfNeeded(webView)
     }
 
+    /// 内容进程被系统杀掉时必定回调（常见原因：解码大图导致内存超限）
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        terminationCount += 1
+        NSLog("web content process terminated, count=\(terminationCount)")
+        showDiagnosticOverlay("⚠️ 内容进程被系统终止（内存不足）第 \(terminationCount) 次")
+        if let url = webView.url {
+            webView.load(URLRequest(url: url))
+        }
+    }
+
     private func importSavesIfNeeded(_ web: WKWebView) {
         // 索引每次启动都要写一次：游戏 boot 时可能把 RPG Global 覆盖成空数组，
         // 只做首次导入会在页面重载后被跳过，导致索引丢失。
@@ -456,7 +467,8 @@ extension RootViewController: WKNavigationDelegate {
                 o.bundledIndexWritten = wrote;
                 var report = JSON.stringify(o);
                 done(report);
-                if (wrote || o.imported > 0) { location.reload(); }
+                // 只有真正补齐了存档文件才重载；索引变化不再触发（否则会把正在玩的人打回标题）
+                if (o.imported > 0) { location.reload(); }
                 return report;
               })['catch'](function(e){
                 return done(JSON.stringify({ errors: ['exception: ' + e.message] }));

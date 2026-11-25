@@ -1,4 +1,10 @@
-/* 存档导入逻辑的单元测试（CI 里用 node 跑，不需要浏览器） */
+/* 存档导入逻辑的单元测试（CI 里用 node 跑，不需要浏览器）
+ *
+ * 重要约束：run() 不允许自行写入/覆盖 RPG Global —— 索引由 App 的 Swift 侧
+ * 用随包资源写入。历史上这里 fetch 过镜像里的旧索引，导致：
+ *   1) 覆盖正确索引，CONTINUE 又空
+ *   2) indexChanged 恒为 true → 页面反复 reload → 玩到一半被打回标题
+ */
 const assert = require('assert');
 const path = require('path');
 
@@ -13,7 +19,6 @@ function check(name, fn) {
   }
 }
 
-/* 轻量的 localStorage / fetch 桩 */
 function makeEnv(files) {
   const store = {};
   global.localStorage = {
@@ -21,17 +26,25 @@ function makeEnv(files) {
     setItem: (k, v) => { store[k] = String(v); },
     removeItem: k => { delete store[k]; },
   };
+  global.sessionStorage = {
+    _d: {},
+    getItem(k) { return k in this._d ? this._d[k] : null; },
+    setItem(k, v) { this._d[k] = String(v); },
+  };
   global.fetch = async function (url) {
-    const key = url.replace(/^\//, '');
+    const key = String(url).replace(/^\//, '');
     if (key === '__savelist') {
-      return { ok: true, json: async () => Object.keys(files).filter(k => k.endsWith('.rpgsave')).map(k => k.replace('/', '|')), status: 200 };
+      const names = Object.keys(files)
+        .filter(k => k.endsWith('.rpgsave'))
+        .map(k => k.replace('/', '|'));
+      return { ok: true, status: 200, json: async () => names, text: async () => JSON.stringify(names) };
     }
     if (key in files) {
-      return { ok: true, text: async () => files[key], status: 200, json: async () => JSON.parse(files[key]) };
+      return { ok: true, status: 200, text: async () => files[key] };
     }
-    const name = decodeURIComponent(key);
-    if (name in files) {
-      return { ok: true, text: async () => files[name], status: 200 };
+    const dec = decodeURIComponent(key);
+    if (dec in files) {
+      return { ok: true, status: 200, text: async () => files[dec] };
     }
     return { ok: false, status: 404, text: async () => '' };
   };
@@ -54,48 +67,29 @@ function makeEnv(files) {
     assert.strictEqual(keyFor('file1_extra'), 'RPG file1_extra');
   });
 
-  /* 场景 1：全新安装——索引与存档都写入 */
+  /* 场景 1：全新安装——存档文件写入，但不碰索引 */
   {
     const store = makeEnv({
-      'save/__global.txt': 'GLOBALINDEX',
+      'save/__global.txt': 'SHOULD-NOT-BE-USED',
       'save/file1.rpgsave': 'SAVE1',
       'save/file3.rpgsave': 'SAVE3',
-      '__savelist': '',
     });
+    store['RPG Global'] = 'BUNDLED-INDEX';
     const report = JSON.parse(await mod.run());
-    check('全新安装：写入索引', () => {
-      assert.strictEqual(store['RPG Global'], 'GLOBALINDEX');
-      assert.strictEqual(report.indexed, true);
-      assert.strictEqual(report.indexChanged, true);
+    check('不覆盖索引（即使镜像里有 __global.txt）', () => {
+      assert.strictEqual(store['RPG Global'], 'BUNDLED-INDEX');
+      assert.strictEqual(report.indexChanged, false);
     });
-    check('全新安装：写入存档', () => {
+    check('写入存档文件', () => {
       assert.strictEqual(store['RPG File1'], 'SAVE1');
       assert.strictEqual(store['RPG File3'], 'SAVE3');
       assert.strictEqual(report.imported, 2);
     });
   }
 
-  /* 场景 2：索引已在且一致——不重复写 */
+  /* 场景 2：已有存档不覆盖用户进度 */
   {
-    const store = makeEnv({
-      'save/__global.txt': 'GLOBALINDEX',
-      '__savelist': '',
-    });
-    store['RPG Global'] = 'GLOBALINDEX';
-    const report = JSON.parse(await mod.run());
-    check('索引未变化时不标记 changed', () => {
-      assert.strictEqual(report.indexChanged, false);
-      assert.strictEqual(report.indexed, true);
-    });
-  }
-
-  /* 场景 3：已有存档不覆盖用户进度 */
-  {
-    const store = makeEnv({
-      'save/__global.txt': 'G2',
-      'save/file1.rpgsave': 'OLD',
-      '__savelist': '',
-    });
+    const store = makeEnv({ 'save/file1.rpgsave': 'OLD' });
     store['RPG File1'] = 'USERPROGRESS-ABCDEFGH';
     const report = JSON.parse(await mod.run());
     check('已有存档不被覆盖', () => {
@@ -105,13 +99,32 @@ function makeEnv(files) {
     });
   }
 
-  /* 场景 4：索引文件 404——不崩，记错误 */
+  /* 场景 3：同会话第二次调用直接返回，不重复扫 */
   {
-    makeEnv({ '__savelist': '' });
+    makeEnv({ 'save/file1.rpgsave': 'X' });
+    global.sessionStorage.setItem('sao_import_session', '1');
     const report = JSON.parse(await mod.run());
-    check('索引缺失时记录错误', () => {
-      assert.strictEqual(report.indexed, false);
-      assert.ok(report.errors.some(e => e.indexOf('__global.txt') >= 0));
+    check('同会话内跳过', () => {
+      assert.strictEqual(report.skipped, -1);
+      assert.strictEqual(report.imported, 0);
+    });
+    global.sessionStorage._d = {};
+  }
+
+  /* 场景 4：savelist 不可用时记录错误但不崩 */
+  {
+    const store = {};
+    global.localStorage = {
+      getItem: k => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: k => { delete store[k]; },
+    };
+    global.sessionStorage = { _d: {}, getItem() { return null; }, setItem() {} };
+    global.fetch = async () => { throw new Error('network down'); };
+    const report = JSON.parse(await mod.run());
+    check('网络异常时记录错误', () => {
+      assert.ok(report.errors.length >= 1);
+      assert.strictEqual(report.imported, 0);
     });
   }
 

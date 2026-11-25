@@ -25,25 +25,10 @@
       indexBytes: 0, errors: []
     };
 
-    /* 1. 预生成的索引：直接写入（这是 CONTINUE 列表的关键） */
-    try {
-      var r = await fetch('/save/__global.txt');
-      if (r.ok) {
-        var text = (await r.text()).trim();
-        if (text) {
-          report.indexBytes = text.length;
-          if (localStorage.getItem('RPG Global') !== text) {
-            localStorage.setItem('RPG Global', text);
-            report.indexChanged = true;
-          }
-          report.indexed = true;
-        }
-      } else {
-        report.errors.push('__global.txt: HTTP ' + r.status);
-      }
-    } catch (e) {
-      report.errors.push('__global.txt: ' + e.message);
-    }
+    /* 索引由 App 内的 Swift 直接写入（随包携带的 Resources/save_global.txt）。
+     * 这里不再 fetch /save/__global.txt：App 镜像里那份可能是旧的，
+     * 写进去会把正确的索引覆盖，还会误判「索引变化」触发页面 reload，
+     * 表现就是玩到一半被打回标题界面。 */
 
     /* 2. 存档文件本体（同一会话内只做一次，避免每次启动都扫一遍） */
     var alreadyImported = false;
