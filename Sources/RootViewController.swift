@@ -16,6 +16,7 @@ final class RootViewController: UIViewController {
     private var didStartGame = false
     private var saveImportStarted = false
     private var lastImportReport = ""
+    private var diagnosticLabel: UILabel?
     private var presentedDebug: UIViewController?
 
     // MARK: - 生命周期
@@ -466,16 +467,73 @@ extension RootViewController: WKNavigationDelegate {
             })();
             """
             web.evaluateJavaScript(runner) { [weak self] result, error in
-                let text = (result as? String) ?? "（异步执行中，见面板）"
+                let text = (result as? String) ?? "（异步执行中）"
                 NSLog("save import -> \(text) \(String(describing: error))")
                 self?.lastImportReport = text
+                self?.runSaveDiagnostics(web)
             }
         }
     }
 
+    /// 关键状态自检：直接显示在屏幕上，不依赖长按面板
+    private func runSaveDiagnostics(_ web: WKWebView) {
+        let js = """
+        (function(){
+          var out = {};
+          try { out.globalLen = (localStorage.getItem('RPG Global') || '').length; } catch (e) { out.globalLen = -1; }
+          try { out.file1Len = (localStorage.getItem('RPG File1') || '').length; } catch (e) { out.file1Len = -1; }
+          try {
+            if (typeof StorageManager !== 'undefined' && StorageManager.webStorageKey) {
+              out.key = String(StorageManager.webStorageKey(-1));
+            }
+          } catch (e) { out.key = 'err'; }
+          try {
+            if (typeof DataManager !== 'undefined') {
+              DataManager.loadGlobalInfo();
+              var gi = DataManager._globalInfo || [];
+              out.giLen = gi.length;
+              out.giFilled = gi.filter(function(x){ return !!x; }).length;
+              out.anySave = String(DataManager.isAnySavefileExists());
+            }
+          } catch (e) { out.dmErr = e.message; }
+          return JSON.stringify(out);
+        })();
+        """
+        web.evaluateJavaScript(js) { [weak self] result, error in
+            guard let self = self else { return }
+            let text = (result as? String) ?? "诊断失败: \(String(describing: error))"
+            NSLog("save diagnostics -> \(text)")
+            self.lastImportReport += "\n[自检] " + text
+            self.showDiagnosticOverlay(text)
+        }
+    }
+
+    private func showDiagnosticOverlay(_ text: String) {
+        guard let web = webView else { return }
+        diagnosticLabel?.removeFromSuperview()
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.font = UIFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+        label.textColor = .white
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.75)
+        label.text = "存档自检\n" + text
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.layer.cornerRadius = 6
+        label.layer.masksToBounds = true
+        web.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: web.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: web.trailingAnchor, constant: -8),
+            label.topAnchor.constraint(equalTo: web.safeAreaLayoutGuide.topAnchor, constant: 40),
+        ])
+        diagnosticLabel = label
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak label] in
+            label?.removeFromSuperview()
+        }
+    }
+
     /// 把任意文本转成安全的 JS 字符串字面量
-    private func jsStringLiteral(_ s: String) -> String {
-        var out = "\""
+    private func jsStringLiteral(_ s: String) -> String {        var out = "\""
         for ch in s.unicodeScalars {
             switch ch {
             case "\\": out += "\\\\"
