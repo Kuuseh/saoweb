@@ -407,40 +407,33 @@ extension RootViewController: WKNavigationDelegate {
     }
 
     private func performSaveImport(_ web: WKWebView) {
-        let js = """
-        (async function(){
-          try {
-            const r = await fetch('/__savelist');
-            const list = await r.json();
-            let n = 0;
-            const keyFor = function(base){
-              const m = base.match(/^file(\\d+)$/i);
-              if (m) return 'RPG File' + m[1];
-              if (/^global$/i.test(base)) return 'RPG Global';
-              if (/^config$/i.test(base)) return 'RPG Config';
-              return 'RPG ' + base;
-            };
-            for (const item of list) {
-              const seg = item.split('|');
-              const dir = seg[0], name = seg[1];
-              const base = name.replace(/\\.rpgsave$/i, '');
-              const key = keyFor(base);
-              if (localStorage.getItem(key) !== null) continue;
-              const res = await fetch('/' + dir + '/' + encodeURIComponent(name));
-              if (!res.ok) continue;
-              const txt = await res.text();
-              localStorage.setItem(key, txt);
-              localStorage.setItem('RPG ' + base, txt);
-              n++;
+        guard let url = Bundle.main.url(forResource: "save_import", withExtension: "js"),
+              let script = try? String(contentsOf: url, encoding: .utf8) else {
+            NSLog("save import: Resources/save_import.js missing in bundle")
+            return
+        }
+
+        web.evaluateJavaScript(script) { _, injectError in
+            if let injectError = injectError {
+                NSLog("save import inject error: \(injectError)")
+                return
             }
-            try { sessionStorage.setItem('sao_import_session', '1'); } catch (e) {}
-            if (n > 0) { location.reload(); }
-            return 'imported ' + n;
-          } catch (e) { return 'err ' + e.message; }
-        })();
-        """
-        web.evaluateJavaScript(js) { result, error in
-            NSLog("save import -> \(String(describing: result)) \(String(describing: error))")
+            let runner = """
+            (function(){
+              if (!window.__saoImportRun) return 'no-runner';
+              return window.__saoImportRun().then(function(r){
+                try { sessionStorage.setItem('sao_import_session','1'); } catch (e) {}
+                try {
+                  var o = JSON.parse(r);
+                  if (o.imported > 0 || o.repaired > 0 || o.globalChanged) { location.reload(); }
+                } catch (e) {}
+                return r;
+              })['catch'](function(e){ return 'err ' + e.message; });
+            })();
+            """
+            web.evaluateJavaScript(runner) { result, error in
+                NSLog("save import -> \(String(describing: result)) \(String(describing: error))")
+            }
         }
     }
 }

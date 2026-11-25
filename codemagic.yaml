@@ -11,6 +11,9 @@ workflows:
         APP_NAME: SAO 陷阱
         IPA_NAME: SAOWeb-unsigned.ipa
     scripts:
+      - name: Verify save import logic
+        script: |
+          node Tests/save_import_test.js
       - name: Verify local HTTP server logic
         script: |
           xcrun swiftc -O Sources/LocalServer.swift Sources/Mirror.swift Tests/main.swift -o /tmp/srvcheck
@@ -57,6 +60,9 @@ workflows:
         APP_NAME: 影に染まり
         IPA_NAME: MV2-unsigned.ipa
     scripts:
+      - name: Verify save import logic
+        script: |
+          node Tests/save_import_test.js
       - name: Verify local HTTP server logic
         script: |
           xcrun swiftc -O Sources/LocalServer.swift Sources/Mirror.swift Tests/main.swift -o /tmp/srvcheck

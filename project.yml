@@ -14,6 +14,8 @@ targets:
       - path: Resources
         excludes:
           - "Info.plist"
+      - path: Resources/save_import.js
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
